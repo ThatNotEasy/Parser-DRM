@@ -2,6 +2,9 @@ import os
 from sys import stdout
 from colorama import Fore
 
+def clear_terminal():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    
 def banners():
     stdout.write("                                                                                         \n")
     stdout.write(""+Fore.LIGHTRED_EX +"██████╗ ██████╗ ███╗   ███╗      ██████╗  █████╗ ██████╗ ███████╗███████╗██████╗\n")
