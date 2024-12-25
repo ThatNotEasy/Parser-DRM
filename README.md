@@ -9,3 +9,11 @@ Device File Parser (PlayReady &amp; Widevine)
 - Converts binary data to readable formats such as base64.
 - Provides a clear text output for better understanding of device data.
 
+## PlayReady
+
+- ![image](https://github.com/user-attachments/assets/0e507c71-84c7-4cf4-bc22-21b48ad6fda5)
+
+## Widevine
+
+- ![image](https://github.com/user-attachments/assets/ac410093-6ef0-45a5-8057-bd6a8e51d3cc)
+
