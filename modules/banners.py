@@ -1,4 +1,4 @@
-import os, time
+import os
 from sys import stdout
 from colorama import Fore
 
@@ -6,8 +6,6 @@ def clear_terminal():
     os.system('cls' if os.name == 'nt' else 'clear')
     
 def banners():
-    time.sleep(1)
-    clear_terminal()
     stdout.write("                                                                                         \n")
     stdout.write(""+Fore.LIGHTRED_EX +"██████╗ ██████╗ ███╗   ███╗      ██████╗  █████╗ ██████╗ ███████╗███████╗██████╗\n")
     stdout.write(""+Fore.LIGHTRED_EX +"██╔══██╗██╔══██╗████╗ ████║      ██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔════╝██╔══██╗\n")
