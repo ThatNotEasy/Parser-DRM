@@ -1,9 +1,10 @@
 import os
 import subprocess
+from zlib import crc32
 from colorama import init, Fore, Style
 from modules.banners import banners, clear_terminal
 from modules.utils import convert_bytes_to_base64
-from modules.widevine import WidevineDeviceStruct, KeyboxStruct
+from modules.widevine import WidevineDeviceStruct, KeyboxStruct, parse_keybox
 from modules.playready import PlayReadyDeviceStruct
 
 init(autoreset=True)
@@ -60,10 +61,36 @@ def read_device_file(file_path):
     elif file_extension == ".enc":
         device_type = "Widevine Keybox"
         try:
-            with open(file_path, "rb") as f:
-                file_data = f.read()
-            parsed_data = KeyboxStruct.Keybox.parse(file_data)
-            return parsed_data, device_type
+            parsed_keybox, base64_keybox, device_id_analysis, crc_valid, crc_with_magic, decrypted_metadata, metadata_analysis = parse_keybox(file_path)
+            
+            print(f"{Fore.CYAN}\n--- Parsed Widevine Keybox Data ---{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{'-' * 30}{Style.RESET_ALL}")
+
+            print(f"{Fore.YELLOW}[Keybox Fields in Hexadecimal]{Style.RESET_ALL}")
+            for field, value in parsed_keybox.items():
+                print(f"  {field}: {Fore.GREEN}{value}{Style.RESET_ALL}")
+
+            print(f"\n{Fore.YELLOW}[Keybox Fields in Base64]{Style.RESET_ALL}")
+            for field, value in base64_keybox.items():
+                print(f"  {field}: {Fore.GREEN}{value}{Style.RESET_ALL}")
+
+            print(f"\n{Fore.YELLOW}[Device ID Analysis]{Style.RESET_ALL}")
+            for field, value in device_id_analysis.items():
+                print(f"  {field}: {Fore.GREEN}{value}{Style.RESET_ALL}")
+
+            print(f"\n{Fore.YELLOW}[CRC Validation]{Style.RESET_ALL}")
+            print(f"  Computed CRC (excluding magic): {Fore.GREEN}0x{crc_valid:08X}{Style.RESET_ALL}")
+            print(f"  Computed CRC (including magic): {Fore.GREEN}0x{crc_with_magic:08X}{Style.RESET_ALL}")
+            print(f"  CRC Valid: {Fore.GREEN if crc_valid else Fore.RED}{crc_valid}{Style.RESET_ALL}")
+
+            print(f"\n{Fore.YELLOW}[Decrypted Metadata]{Style.RESET_ALL}")
+            print(f"  Hex: {Fore.GREEN}{decrypted_metadata}{Style.RESET_ALL}")
+            if metadata_analysis:
+                print(f"\n{Fore.YELLOW}[Metadata Analysis]{Style.RESET_ALL}")
+                for field, value in metadata_analysis.items():
+                    print(f"  {field}: {Fore.GREEN}{value}{Style.RESET_ALL}")
+
+            return None, device_type
         except Exception as e:
             print(f"{Fore.RED}Error parsing Widevine Keybox file: {e}{Style.RESET_ALL}")
             return None, device_type
