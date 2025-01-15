@@ -85,10 +85,6 @@ def read_device_file(file_path):
 
             print(f"\n{Fore.YELLOW}[Decrypted Metadata]{Style.RESET_ALL}")
             print(f"  Hex: {Fore.GREEN}{decrypted_metadata}{Style.RESET_ALL}")
-            if metadata_analysis:
-                print(f"\n{Fore.YELLOW}[Metadata Analysis]{Style.RESET_ALL}")
-                for field, value in metadata_analysis.items():
-                    print(f"  {field}: {Fore.GREEN}{value}{Style.RESET_ALL}")
 
             return None, device_type
         except Exception as e:
