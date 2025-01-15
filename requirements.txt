@@ -1,0 +1,5 @@
+pywidevine
+pyplayready
+construct==2.8.8
+colorama
+coloredlogs

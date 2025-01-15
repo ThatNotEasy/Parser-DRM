@@ -3,7 +3,7 @@ import subprocess
 from colorama import init, Fore, Style
 from modules.banners import banners, clear_terminal
 from modules.utils import convert_bytes_to_base64
-from modules.widevine import WidevineDeviceStruct
+from modules.widevine import WidevineDeviceStruct, KeyboxStruct
 from modules.playready import PlayReadyDeviceStruct
 
 init(autoreset=True)
@@ -44,7 +44,7 @@ def read_device_file(file_path):
     file_extension = os.path.splitext(file_path)[1].lower()
     parsed_data, device_type = None, None
 
-    if file_extension == ".prd" or file_extension == ".dat":
+    if file_extension in [".prd", ".dat"]:
         device_type = "PlayReady"
         structs = [
             PlayReadyDeviceStruct.PlayReadyDeviceStructVersion_3,
@@ -57,19 +57,30 @@ def read_device_file(file_path):
             WidevineDeviceStruct.WidevineDeviceStructVersion_2,
             WidevineDeviceStruct.WidevineDeviceStructVersion_1,
         ]
+    elif file_extension == ".enc":
+        device_type = "Widevine Keybox"
+        try:
+            with open(file_path, "rb") as f:
+                file_data = f.read()
+            parsed_data = KeyboxStruct.Keybox.parse(file_data)
+            return parsed_data, device_type
+        except Exception as e:
+            print(f"{Fore.RED}Error parsing Widevine Keybox file: {e}{Style.RESET_ALL}")
+            return None, device_type
     else:
         print(f"{Fore.YELLOW}Unsupported file type: {file_extension}{Style.RESET_ALL}")
         return None, None
 
-    with open(file_path, "rb") as file:
-        file_data = file.read()
+    if structs:
+        with open(file_path, "rb") as file:
+            file_data = file.read()
 
-    for idx, struct in enumerate(structs, start=1):
-        try:
-            parsed_data = struct.parse(file_data)
-            return parsed_data, device_type
-        except Exception as e:
-            print(f"{Fore.RED}Error parsing {device_type} file with version {idx}: {e}{Style.RESET_ALL}")
+        for idx, struct in enumerate(structs, start=1):
+            try:
+                parsed_data = struct.parse(file_data)
+                return parsed_data, device_type
+            except Exception as e:
+                print(f"{Fore.RED}Error parsing {device_type} file with version {idx}: {e}{Style.RESET_ALL}")
 
     print(f"{Fore.RED}Failed to parse {device_type} file with all available versions.{Style.RESET_ALL}")
     return None, device_type

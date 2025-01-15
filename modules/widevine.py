@@ -63,3 +63,13 @@ class WidevineDeviceStruct(BaseDevice):
         "client_id_len" / Int16ub,
         "client_id" / Bytes(this.client_id_len)
     )
+    
+    
+class KeyboxStruct:
+    Keybox = Struct(
+        "stable_id" / Bytes(32),
+        "device_aes_key" / Bytes(16),
+        "device_id" / Bytes(72),
+        "body_crc" / Int32ub,
+        "magic" / Bytes(4)  # Remove `Const` constraint to allow flexibility
+    )
