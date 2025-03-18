@@ -1,133 +1,95 @@
-import os
-import subprocess
-from zlib import crc32
+import os, logging
 from colorama import init, Fore, Style
 from modules.banners import banners, clear_terminal
 from modules.utils import convert_bytes_to_base64
-from modules.widevine import WidevineDeviceStruct, KeyboxStruct, parse_keybox
+from modules.widevine import WidevineDeviceStruct, parse_keybox
 from modules.playready import PlayReadyDeviceStruct
 
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 init(autoreset=True)
 
-def run_command(command, description="executing the command"):
-    try:
-        subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except subprocess.CalledProcessError:
-        print(f"{Fore.RED}Error: Failed to {description}{Style.RESET_ALL}")
-        exit(1)
-
-def reinstall_libraries():
-    clear_terminal()
-    banners()
-    run_command("pip uninstall -y pywidevine pyplayready construct pymp4", "uninstall libraries")
-    run_command("pip install pywidevine pyplayready construct pymp4", "install libraries")
-    print(f"🌐  {Fore.GREEN}Libraries reinstalled successfully!{Style.RESET_ALL}")
-
-def run_migrate_device():
-    clear_terminal()
-    banners()
-    
-    exe_path = os.path.join("modules", "migrate_device.exe")
-    
-    if not os.path.isfile(exe_path):
-        print(f"{Fore.RED}Error: 'migrate_device.exe' not found in 'modules' directory.{Style.RESET_ALL}")
-        exit(1)
-
-    print(f"{Fore.GREEN}Running migrate_device.exe...{Style.RESET_ALL}\n")
-    exit_code = os.system(f'"{exe_path}"')
-    if exit_code == 0:
-        print(f"{Fore.GREEN}Migration completed successfully!{Style.RESET_ALL}")
-    else:
-        print(f"{Fore.RED}Error: Failed to execute migrate-device.exe. Exit code: {exit_code}{Style.RESET_ALL}")
-    exit(exit_code)
-
 def read_device_file(file_path):
+    """Reads and parses a DRM device file (PlayReady or Widevine)."""
     file_extension = os.path.splitext(file_path)[1].lower()
     parsed_data, device_type = None, None
 
-    if file_extension in [".prd", ".dat"]:
+    if file_extension in [".prd", ".dat", ".bin"]:
         device_type = "PlayReady"
         structs = [
-            PlayReadyDeviceStruct.PlayReadyDeviceStructVersion_3,
-            PlayReadyDeviceStruct.PlayReadyDeviceStructVersion_2,
-            PlayReadyDeviceStruct.PlayReadyDeviceStructVersion_1,
+            ("Version 3", PlayReadyDeviceStruct.PlayReadyDeviceStructVersion_3),
+            ("Version 2", PlayReadyDeviceStruct.PlayReadyDeviceStructVersion_2),
+            ("Version 1", PlayReadyDeviceStruct.PlayReadyDeviceStructVersion_1),
         ]
+
+        try:
+            hex_result = PlayReadyDeviceStruct.read_hex(file_path)
+            device_name = hex_result.get("device_name", "Unknown Device") if hex_result else "Unknown Device"
+            security_level = hex_result.get("security_level", "Unknown Security Level") if hex_result else "Unknown Security Level"
+        except Exception as e:
+            logging.warning(f"read_hex() failed: {e}. Using default values.")
+            device_name, security_level = "Unknown Device", "Unknown Security Level"
+
+        try:
+            with open(file_path, "rb") as file:
+                file_data = file.read()
+
+            for version_name, struct in structs:
+                try:
+                    parsed_data = struct.parse(file_data)
+                    parsed_data["device_name"] = device_name
+                    parsed_data["security_level"] = security_level
+
+                    return parsed_data, device_type
+                except Exception as e:
+                    logging.warning(f"Error parsing PlayReady file with {version_name}: {e}")
+
+        except Exception as e:
+            logging.error(f"Failed to read file: {e}")
+
     elif file_extension == ".wvd":
         device_type = "Widevine"
         structs = [
-            WidevineDeviceStruct.WidevineDeviceStructVersion_2,
-            WidevineDeviceStruct.WidevineDeviceStructVersion_1,
+            ("Version 2", WidevineDeviceStruct.WidevineDeviceStructVersion_2),
+            ("Version 1", WidevineDeviceStruct.WidevineDeviceStructVersion_1),
         ]
-    elif file_extension == ".enc":
+
+        try:
+            with open(file_path, "rb") as file:
+                file_data = file.read()
+
+            for version_name, struct in structs:
+                try:
+                    parsed_data = struct.parse(file_data)
+                    logging.info(f"Parsed Widevine {version_name} successfully.")
+                    return parsed_data, device_type
+                except Exception as e:
+                    logging.warning(f"Error parsing Widevine file with {version_name}: {e}")
+
+        except Exception as e:
+            logging.error(f"Failed to read file: {e}")
+
+    elif file_extension in [".enc", ".keybox"]:
         device_type = "Widevine Keybox"
         try:
             parsed_keybox, base64_keybox, device_id_analysis, crc_valid, crc_with_magic, decrypted_metadata, metadata_analysis = parse_keybox(file_path)
-            
-            print(f"{Fore.CYAN}\n--- Parsed Widevine Keybox Data ---{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}{'-' * 30}{Style.RESET_ALL}")
 
-            print(f"{Fore.YELLOW}[Keybox Fields in Hexadecimal]{Style.RESET_ALL}")
-            for field, value in parsed_keybox.items():
-                print(f"  {field}: {Fore.GREEN}{value}{Style.RESET_ALL}")
-
-            print(f"\n{Fore.YELLOW}[Keybox Fields in Base64]{Style.RESET_ALL}")
-            for field, value in base64_keybox.items():
-                print(f"  {field}: {Fore.GREEN}{value}{Style.RESET_ALL}")
-
-            print(f"\n{Fore.YELLOW}[Device ID Analysis]{Style.RESET_ALL}")
-            for field, value in device_id_analysis.items():
-                print(f"  {field}: {Fore.GREEN}{value}{Style.RESET_ALL}")
-
-            print(f"\n{Fore.YELLOW}[CRC Validation]{Style.RESET_ALL}")
-            print(f"  Computed CRC (excluding magic): {Fore.GREEN}0x{crc_valid:08X}{Style.RESET_ALL}")
-            print(f"  Computed CRC (including magic): {Fore.GREEN}0x{crc_with_magic:08X}{Style.RESET_ALL}")
-            print(f"  CRC Valid: {Fore.GREEN if crc_valid else Fore.RED}{crc_valid}{Style.RESET_ALL}")
-
-            print(f"\n{Fore.YELLOW}[Decrypted Metadata]{Style.RESET_ALL}")
-            print(f"  Hex: {Fore.GREEN}{decrypted_metadata}{Style.RESET_ALL}")
-
-            return None, device_type
+            return {
+                "parsed_keybox": parsed_keybox,
+                "base64_keybox": base64_keybox,
+                "device_id_analysis": device_id_analysis,
+                "crc_valid": crc_valid,
+                "crc_with_magic": crc_with_magic,
+                "decrypted_metadata": decrypted_metadata,
+                "metadata_analysis": metadata_analysis
+            }, device_type
         except Exception as e:
-            print(f"{Fore.RED}Error parsing Widevine Keybox file: {e}{Style.RESET_ALL}")
+            logging.error(f"Error parsing Widevine Keybox file: {e}")
             return None, device_type
-    else:
-        print(f"{Fore.YELLOW}Unsupported file type: {file_extension}{Style.RESET_ALL}")
-        return None, None
 
-    if structs:
-        with open(file_path, "rb") as file:
-            file_data = file.read()
-
-        for idx, struct in enumerate(structs, start=1):
-            try:
-                parsed_data = struct.parse(file_data)
-                return parsed_data, device_type
-            except Exception as e:
-                print(f"{Fore.RED}Error parsing {device_type} file with version {idx}: {e}{Style.RESET_ALL}")
-
-    print(f"{Fore.RED}Failed to parse {device_type} file with all available versions.{Style.RESET_ALL}")
     return None, device_type
 
-def pretty_print(data, device_type):
-    if data:
-        print(f"\n{Fore.CYAN}--- Parsed {device_type} Data ---{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'-' * 30}{Style.RESET_ALL}")
-        for field, value in data.items():
-            if isinstance(value, bytes):
-                value = convert_bytes_to_base64(value)
-            elif isinstance(value, int):
-                value = f"{value:,}"
-            elif isinstance(value, bool):
-                value = f"{Fore.GREEN}Enabled{Style.RESET_ALL}" if value else f"{Fore.RED}Disabled{Style.RESET_ALL}"
-            elif value is None:
-                value = f"{Fore.YELLOW}N/A{Style.RESET_ALL}"
-            
-            print(f"{Fore.MAGENTA}{field.replace('_', ' ').title():<30}: {Fore.WHITE}{value}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'-' * 30}{Style.RESET_ALL}")
-    else:
-        print(f"{Fore.RED}Failed to parse {device_type} file.{Style.RESET_ALL}")
-
 def process_directory(directory_path):
+    """Finds all devices in the specified directory."""
     devices = []
     for filename in os.listdir(directory_path):
         file_path = os.path.join(directory_path, filename)
@@ -136,70 +98,86 @@ def process_directory(directory_path):
     return devices
 
 def choose_device(devices):
+    """Displays available devices with a structured UI and allows user selection."""
     if not devices:
-        print(f"{Fore.RED}No devices found to process.{Style.RESET_ALL}")
+        print(f"\n{Fore.RED}No devices found to process.{Style.RESET_ALL}")
         exit(1)
 
-    print(f"\n{Fore.CYAN}Available Devices:{Style.RESET_ALL}")
-    print(Fore.WHITE + ".++" + "=" * 50 + "++.\n" + Style.RESET_ALL)
+    box_width = 64  # Ensures consistent width
+    title = " Available Device Files "
+    title_bar = f"╔{'═' * (box_width - 2)}╗"
+    title_text = f"║{title.center(box_width - 2)}║"
+    separator = f"╠{'═' * (box_width - 2)}╣"
+    bottom_border = f"╚{'═' * (box_width - 2)}╝"
+
+    print(f"\n{Fore.CYAN}{title_bar}{Fore.RESET}")
+    print(f"{title_text}")
+    print(f"{separator}")
+
     for idx, (filename, _) in enumerate(devices, 1):
-        print(f"{Fore.MAGENTA}{idx}. {filename}{Style.RESET_ALL}")
+        file_display = filename[:50] + "..." if len(filename) > 50 else filename
+        print(f"║ {Fore.YELLOW}{idx:<2} . {Fore.GREEN}{file_display:<55}{Fore.CYAN} ║{Fore.RESET}")
 
-    try:
-        choice = int(input(f"\n{Fore.CYAN}Enter the number of the device you want to view (1-{len(devices)}): {Style.RESET_ALL}"))
-        if 1 <= choice <= len(devices):
-            return devices[choice - 1]
-        else:
-            print(f"{Fore.RED}Invalid choice. Exiting...{Style.RESET_ALL}")
-            exit(1)
-    except ValueError:
-        print(f"{Fore.RED}Invalid input. Please enter a number.{Style.RESET_ALL}")
-        exit(1)
+    print(bottom_border + Style.RESET_ALL)
 
-def parser_drm_device():
+    while True:
+        try:
+            choice = int(input(f"\n{Fore.CYAN}Enter the number of the device you want to view (1-{len(devices)}): {Style.RESET_ALL}"))
+            if 1 <= choice <= len(devices):
+                return devices[choice - 1]
+            else:
+                print(f"{Fore.RED}Invalid choice. Please enter a number between 1 and {len(devices)}.{Style.RESET_ALL}")
+        except ValueError:
+            print(f"{Fore.RED}Invalid input. Please enter a valid number.{Style.RESET_ALL}")
+
+def pretty_print(data, device_type):
+    """Prints parsed data in a structured format."""
+    if not data:
+        print(f"{Fore.RED}Failed to parse {device_type} file.{Style.RESET_ALL}")
+        return
+
+    print(f"\n{Fore.CYAN}╔════════════════════════════════════════════════════════════════════╗{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}║                      {Fore.YELLOW}Parsed {device_type} Data                        {Fore.CYAN} ║{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}╚════════════════════════════════════════════════════════════════════╝{Style.RESET_ALL}")
+
+    for field, value in data.items():
+        if isinstance(value, bytes):
+            value = convert_bytes_to_base64(value)
+        elif isinstance(value, int):
+            value = f"{value:,}"
+        elif isinstance(value, bool):
+            value = f"{Fore.GREEN}Enabled{Style.RESET_ALL}" if value else f"{Fore.RED}Disabled{Style.RESET_ALL}"
+        elif value is None:
+            value = f"{Fore.YELLOW}N/A{Style.RESET_ALL}"
+
+        print(f"{Fore.MAGENTA}{field.replace('_', ' ').title():<30}:{Style.RESET_ALL} {Fore.WHITE}{value}{Style.RESET_ALL}")
+
+    print(f"{Fore.CYAN}══════════════════════════════════════════════════════════════════════════════════{Style.RESET_ALL}\n")
+
+def main():
+    """Automatically displays available devices and allows user to choose which one to parse."""
     clear_terminal()
     banners()
     devices_directory = "devices"
+
     if not os.path.isdir(devices_directory):
         print(f"{Fore.RED}Directory 'devices' does not exist. Exiting...{Style.RESET_ALL}")
         exit(1)
 
     devices = process_directory(devices_directory)
+
+    if not devices:
+        print(f"{Fore.RED}No devices found to process.{Style.RESET_ALL}")
+        exit(1)
+
     selected_device = choose_device(devices)
-    if selected_device:
-        filename, file_path = selected_device
-        clear_terminal()
-        banners()
-        print(f"\n{Fore.CYAN}Processing file: {filename}{Style.RESET_ALL}")
-        parsed_data, device_type = read_device_file(file_path)
-        pretty_print(parsed_data, device_type)
-        exit(0)
-
-def main_menu():
-    reinstall_libraries()
-    while True:
-        clear_terminal()
-        banners()
-        print(f"{Fore.GREEN}Please select an option:{Style.RESET_ALL}\n")
-        print(f"{Fore.YELLOW}[1] {Fore.RED}- {Fore.GREEN}Parse DRM Device{Fore.RESET}")
-        print(f"{Fore.YELLOW}[2] {Fore.RED}- {Fore.GREEN}Migrate/Upgrade Device{Fore.RESET}")
-        print(f"{Fore.YELLOW}[3] {Fore.RED}- {Fore.GREEN}Exit{Fore.RESET}")
-
-        choice = input(f"\n{Fore.CYAN}Enter your choice: {Style.RESET_ALL}")
-        if choice == "1":
-            parser_drm_device()
-        elif choice == "2":
-            run_migrate_device()
-        elif choice == "3":
-            print(f"{Fore.GREEN}Exiting...{Style.RESET_ALL}")
-            exit(0)
-        else:
-            print(f"{Fore.RED}Invalid choice. Please try again.{Style.RESET_ALL}")
-
-if __name__ == "__main__":
+    filename, file_path = selected_device
     clear_terminal()
     banners()
-    print(f"🌐  {Fore.RED}Reinstalling required packages for compatibility ...{Fore.RESET}")
-    run_command("pip uninstall -y pywidevine pyplayready construct pymp4", "uninstall libraries")
-    run_command("pip install pywidevine pyplayready construct pymp4", "install libraries")
-    main_menu()
+    print(f"\n{Fore.CYAN}Processing file: {filename}{Style.RESET_ALL}")
+
+    parsed_data, device_type = read_device_file(file_path)
+    pretty_print(parsed_data, device_type)
+
+if __name__ == "__main__":
+    main()

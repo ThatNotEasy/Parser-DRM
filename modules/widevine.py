@@ -1,6 +1,7 @@
 from construct import Struct, Const, Int8ub, Bytes, Int32ub, Int16ub, Optional, Padded, Flag, BitStruct, Padding, If, this
 from construct import Enum as CEnum
 from enum import IntEnum
+from colorama import Fore, Style
 import construct
 import struct
 import base64
@@ -20,13 +21,6 @@ class BaseDevice:
 class WidevineDeviceStruct(BaseDevice):
     magic = Const(b"WVD")
 
-    # Helper to handle Const differences between versions
-    def version_const(value):
-        if CONSTRUCT_VERSION >= (2, 10, 67):
-            return Const(value, Int8ub)  # Newer syntax
-        else:
-            return Const(Int8ub, value)  # Older syntax
-
     header = Struct(
         "signature" / magic,
         "version" / Int8ub
@@ -34,15 +28,10 @@ class WidevineDeviceStruct(BaseDevice):
 
     WidevineDeviceStructVersion_1 = Struct(
         "signature" / magic,
-        "version" / version_const(1),  # Dynamic Const based on version
-        "type_" / CEnum(
-            Int8ub,
-            **{t.name: t.value for t in BaseDevice.Types}
-        ),
+        "version" / Int8ub,
+        "type_" / CEnum(Int8ub, **{t.name: t.value for t in BaseDevice.Types}),
         "security_level" / Int8ub,
-        "flags" / Padded(1, Optional(BitStruct(
-            Padding(8)
-        ))),
+        "flags" / Padded(1, Optional(BitStruct(Padding(8)))),
         "private_key_len" / Int16ub,
         "private_key" / Bytes(this.private_key_len),
         "client_id_len" / Int16ub,
@@ -53,15 +42,10 @@ class WidevineDeviceStruct(BaseDevice):
 
     WidevineDeviceStructVersion_2 = Struct(
         "signature" / magic,
-        "version" / version_const(2),  # Dynamic Const based on version
-        "type_" / CEnum(
-            Int8ub,
-            **{t.name: t.value for t in BaseDevice.Types}
-        ),
+        "version" / Int8ub,
+        "type_" / CEnum(Int8ub, **{t.name: t.value for t in BaseDevice.Types}),
         "security_level" / Int8ub,
-        "flags" / Padded(1, Optional(BitStruct(
-            Padding(8)
-        ))),
+        "flags" / Padded(1, Optional(BitStruct(Padding(8)))),
         "private_key_len" / Int16ub,
         "private_key" / Bytes(this.private_key_len),
         "client_id_len" / Int16ub,
@@ -89,7 +73,7 @@ def parse_keybox(file_path):
 
         # Ensure the file length is as expected
         if len(keybox_data) != 128:
-            raise ValueError(f"Unexpected keybox length: {len(keybox_data)} bytes. Expected 128 bytes.")
+            raise ValueError(f"{Fore.RED}Unexpected keybox length: {len(keybox_data)} bytes. Expected 128 bytes.{Style.RESET_ALL}")
 
         # Define offsets for the fields
         keybox_format = {
@@ -147,12 +131,12 @@ def parse_keybox(file_path):
             }
 
         except Exception as e:
-            decrypted_metadata_hex = f"Decryption failed: {e}"
+            decrypted_metadata_hex = f"{Fore.RED}Decryption failed: {e}{Style.RESET_ALL}"
             metadata_analysis = {}
 
         return parsed_keybox, base64_keybox, device_id_analysis, crc_valid, computed_crc_with_magic, decrypted_metadata_hex, metadata_analysis
 
     except FileNotFoundError:
-        raise FileNotFoundError(f"File not found: {file_path}")
+        raise FileNotFoundError(f"{Fore.RED}File not found: {file_path}{Style.RESET_ALL}")
     except Exception as e:
-        raise RuntimeError(f"Error parsing keybox: {e}")
+        raise RuntimeError(f"{Fore.RED}Error parsing keybox: {e}{Style.RESET_ALL}")
