@@ -1,12 +1,14 @@
-import os, logging
+import os
 from colorama import init, Fore, Style
+from modules.logger import setup_logging
 from modules.banners import banners, clear_terminal
 from modules.utils import convert_bytes_to_base64
-from modules.widevine import WidevineDeviceStruct, parse_keybox
+from modules.keybox import parse_keybox, keybox_main
+from modules.widevine import WidevineDeviceStruct
 from modules.playready import PlayReadyDeviceStruct
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 init(autoreset=True)
+logging = setup_logging()
 
 def read_device_file(file_path):
     """Reads and parses a DRM device file (PlayReady or Widevine)."""
@@ -60,7 +62,6 @@ def read_device_file(file_path):
             for version_name, struct in structs:
                 try:
                     parsed_data = struct.parse(file_data)
-                    logging.info(f"Parsed Widevine {version_name} successfully.")
                     return parsed_data, device_type
                 except Exception as e:
                     logging.warning(f"Error parsing Widevine file with {version_name}: {e}")
@@ -68,7 +69,7 @@ def read_device_file(file_path):
         except Exception as e:
             logging.error(f"Failed to read file: {e}")
 
-    elif file_extension in [".enc", ".keybox"]:
+    elif file_extension in [".enc", ".keybox", ".bin"]:
         device_type = "Widevine Keybox"
         try:
             parsed_keybox, base64_keybox, device_id_analysis, crc_valid, crc_with_magic, decrypted_metadata, metadata_analysis = parse_keybox(file_path)
@@ -85,8 +86,15 @@ def read_device_file(file_path):
         except Exception as e:
             logging.error(f"Error parsing Widevine Keybox file: {e}")
             return None, device_type
-
-    return None, device_type
+        
+    elif ".xml" in file_extension:
+        device_type = "Widevine Keybox XML"
+        try:
+            result = keybox_main(file_path)
+            return result, device_type
+        except Exception as e:
+            logging.error(f"Error processing Widevine Keybox XML file: {e}")
+            return {"Status": "Error"}, device_type
 
 def process_directory(directory_path):
     """Finds all devices in the specified directory."""
@@ -137,7 +145,7 @@ def pretty_print(data, device_type):
         return
 
     print(f"\n{Fore.CYAN}╔════════════════════════════════════════════════════════════════════╗{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}║                      {Fore.YELLOW}Parsed {device_type} Data                        {Fore.CYAN} ║{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}                      {Fore.YELLOW}Parsed {device_type} Data                  {Fore.CYAN} {Style.RESET_ALL}")
     print(f"{Fore.CYAN}╚════════════════════════════════════════════════════════════════════╝{Style.RESET_ALL}")
 
     for field, value in data.items():
@@ -152,7 +160,7 @@ def pretty_print(data, device_type):
 
         print(f"{Fore.MAGENTA}{field.replace('_', ' ').title():<30}:{Style.RESET_ALL} {Fore.WHITE}{value}{Style.RESET_ALL}")
 
-    print(f"{Fore.CYAN}══════════════════════════════════════════════════════════════════════════════════{Style.RESET_ALL}\n")
+    print(Fore.CYAN + "═" * 70 + Style.RESET_ALL + "\n")
 
 def main():
     """Automatically displays available devices and allows user to choose which one to parse."""
@@ -174,7 +182,7 @@ def main():
     filename, file_path = selected_device
     clear_terminal()
     banners()
-    print(f"\n{Fore.CYAN}Processing file: {filename}{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}Processing file: {filename}{Style.RESET_ALL}")
 
     parsed_data, device_type = read_device_file(file_path)
     pretty_print(parsed_data, device_type)
